@@ -6,7 +6,7 @@ import time
 from scipy.sparse import csr_matrix, identity
 from scipy.sparse.linalg import inv
 from scipy.linalg import sqrtm
-
+from sklearn.metrics.pairwise import euclidean_distances
 
 file_name = "images/bear.png"
 threshold = 0.9
@@ -27,12 +27,8 @@ def resize_and_blur_image(file_name):
 
 
 def compute_weight(point_1, point_2, threshold=0.9, x_max=100, y_max=100):
-    x1, y1 = point_1
-    x2, y2 = point_2
-    
-    norm_val = np.power((x2-x1), 2) + np.power((y2-y1), 2)
+    weight_val = np.exp( -4 * np.linalg.norm( point_1 - point_2 )**2 )
 
-    weight_val = np.exp( -4 * norm_val )
     if weight_val < threshold: 
         weight_val = 0
 
@@ -46,8 +42,8 @@ def compute_sq_eucl_dist(point_1, point_2):
     return np.power((x2-x1), 2) + np.power((y2-y1), 2)
 
 
-def normalise_pixel(x, y, x_max=100, y_max=100):
-    return x/x_max, y/y_max
+def normalise_pixel(x, y, r, g, b, x_max=100, y_max=100):
+    return x/x_max, y/y_max, r/256, g/256, b/256
 
 
 """
@@ -60,28 +56,28 @@ def naive_construct_adjacency_matrix(file_name, threshold=0.9, h_size=100, v_siz
     # go through each pixel of image one by one
     for i in range(len(img)):
         for j in range(len(img)):
-            x_norm, y_norm = normalise_pixel( (i+1), (j+1), h_size, v_size )
-            point_1 = (x_norm, y_norm)
+            r, g, b = img[i][j]
+            x, y, r, g, b = normalise_pixel(i+1, j+1, r, g, b, h_size, v_size)
+            point_1 = np.array([x, y, r, g, b])
             
             # need to find an alternative for the loop
-            for row_ind in range(-5, 6):
-                for col_ind in range(-5, 6):
-                    x_temp = (i+1) + row_ind
-                    y_temp = (j+1) + col_ind
-                    point_2 = ( normalise_pixel(x_temp, y_temp, h_size, v_size) )
-
-                    #eucl_dist = compute_sq_eucl_dist(point_1, point_2)
-                    weight_val = compute_weight(point_1, point_2) 
+            for row_ind in range(-2, 3):
+                for col_ind in range(-2, 3):
+                    x2 = (i+1) + row_ind
+                    y2 = (j+1) + col_ind
+                    r2, g2, b2 = img[row_ind][col_ind]
+                    point_2 = np.array([normalise_pixel(x2, y2, r2, g2, b2, h_size, v_size)])
                     
+                    weight_val = compute_weight(point_1, point_2) 
                     snd_ind = i*h_size + j - row_ind*h_size + col_ind
                     if snd_ind >= 10000:
                         snd_ind -= 10000  
                     adj_matr[i*h_size+j, snd_ind] = weight_val 
 
-    num_nonzero = np.count_nonzero(adj_matr)
+    #num_nonzero = np.count_nonzero(adj_matr)
 
-    print("Non zero: " + str(num_nonzero))
-    print("Average degree: " + str(num_nonzero/10000) )
+    #print("Non zero: " + str(num_nonzero))
+    #print("Average degree: " + str(num_nonzero/10000) )
 
     return csr_matrix(adj_matr)
 
@@ -132,26 +128,24 @@ def construct_adjacency_matrix(file_name, threshold=0.9, h_size=100, v_size=100)
     # go through each pixel of image one by one
     for i in range(len(img)):
         for j in range(len(img)):
-            x_norm, y_norm = normalise_pixel( (i+1), (j+1), h_size, v_size )
-            point_1 = (x_norm, y_norm)
+            r, g, b = img[i][j]
+            x, y, r, g, b = normalise_pixel(i+1, j+1, r, g, b, h_size, v_size)
+            point_1 = (x, y, r, g, b)
             
             row.append(i)
             col.append(j)
 
-            for ind in range(120):
-
             # need to find an alternative for the loop
-                    x_temp = (i+1) + row_ind
-                    y_temp = (j+1) + col_ind
-                    point_2 = ( normalise_pixel(x_temp, y_temp, h_size, v_size) )
+            x_temp = (i+1) + row_ind
+            y_temp = (j+1) + col_ind
+            point_2 = ( normalise_pixel(x_temp, y_temp, h_size, v_size) )
 
-                    #eucl_dist = compute_sq_eucl_dist(point_1, point_2)
-                    weight_val = compute_weight(point_1, point_2) 
-                    
-                    snd_ind = i*h_size + j - row_ind*h_size + col_ind
-                    if snd_ind >= 10000:
-                        snd_ind -= 10000  
-                    adj_matr[i*h_size+j, snd_ind] = weight_val 
+            weight_val = compute_weight(point_1, point_2) 
+            
+            snd_ind = i*h_size + j + row_ind*h_size + col_ind
+            if snd_ind >= 10000:
+                snd_ind -= 10000  
+            adj_matr[i*h_size+j, snd_ind] = weight_val 
 
     num_nonzero = np.count_nonzero(adj_matr)
 
@@ -201,9 +195,16 @@ def main():
 
 #main()
 
-A = csr_matrix( [[4, 0], [0, 16]] )
+#A = csr_matrix( [[4, 0], [0, 16]] )
+#print( power_method(A) )
 
-print( power_method(A) )
+start = time.time()
+naive_construct_adjacency_matrix("test_blur_2.jpg")
+    
+end = time.time()
+print(end - start)
+
+
 
 """ matrix = np.zeros((2, 2))
 val = 0
