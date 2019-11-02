@@ -8,6 +8,9 @@ from scipy.sparse.linalg import inv
 from scipy.linalg import sqrtm
 from sklearn.metrics.pairwise import euclidean_distances
 from scipy.spatial import distance 
+import seaborn as sns 
+import matplotlib.pyplot as plt
+from itertools import combinations
 
 file_name = "images/bear.png"
 threshold = 0.9
@@ -21,7 +24,9 @@ def resize_and_blur_image(file_name):
     img_res = cv2.resize(img, (h_size, v_size))
     img_blur = cv2.GaussianBlur(img_res,(5,5),cv2.BORDER_DEFAULT) 
 
-    cv2.imwrite("test_blur_2.jpg", img_blur)
+    plt.imshow(img_blur)
+    plt.show()
+    #cv2.imwrite("test_blur_2.jpg", img_blur)
 
 
 def compute_weight(point_1, point_2, threshold=0.9, x_max=100, y_max=100):
@@ -179,7 +184,6 @@ Computes inverse squared root of matrix D given an adjacency matrix A
 Returns only the diagonal values 
 """
 def compute_sqrt_inv_D(D):
-    row_sums = np.asarray( csr_matrix.sum(A, axis=1) )
     row_sums = np.sqrt(row_sums)        # take square root
     row_sums = np.reciprocal(row_sums)  # take inverse
 
@@ -208,19 +212,18 @@ def normalised_laplacian(A):
 
 """
 Input: Adjacency matrix (A) and D in the form of vector
-Returns: the desired matrix (I + inv(sqrt(D))*A*inv(sqrt(D)) )
+Returns: the desired matrix (I + inv(D)*A ) which holds as D is a diagonal matrix
 """
 def desired_matrix(A, D):
     D_inv = np.reciprocal(D)
 
-    return identity(A.shape[0]) + D_inv * A
-
+    return identity(A.shape[0]) + A * D_inv
 
 def power_method(B):
     B = B.todense()
     print(B)
     x = np.random.normal(0, 1, B.shape[0])
-    k = 10
+    k = 100
 
     for i in range(k):
         x = np.asarray(B.dot(x))
@@ -234,12 +237,14 @@ def power_method(B):
 Given a square root of matrix D and a matrix B,
 computes using power method the 2nd largest eigenvalue of B
 """
-def power_method_2nd_eigenvalue(B, D_sq_rt, k=10):
+def power_method_2nd_eigenvalue(B, v1, k=20):
     x0 = np.random.normal(0, 1, B.shape[0])
-    
-    # assume supplied matrix is already squared root of D
-    v1 = D_sq_rt  
-    x = x0 - np.dot(v1, x0) * v1
+
+    # reshape v1 to shape (n,) from (n,1)
+    v1 = v1.reshape( (v1.shape[0],) )
+
+    dot_product = np.dot(v1, x0)
+    x = x0 - dot_product * v1
 
     for i in range(k):
         x = np.asarray(B.dot(x))
@@ -249,25 +254,106 @@ def power_method_2nd_eigenvalue(B, D_sq_rt, k=10):
     return x, np.linalg.norm(B.dot(x))
 
 
-def compute_eigenvalue(A, eigen_vector):
-    pass
+def sort_eigenvector(f2):
+    V_inds = f2.argsort()
+    f2.sort()
 
+    return f2, V_inds
+
+
+"""
+input: adjacency matrix A and a single row of indices S that should be considered 
+"""
+def volume(S, A):
+    D = A.sum(axis=1)
+    
+    return D.take(S).sum()
+
+def sum_old_weights(S, A, latest_index):
+    # create edges from all vertices in S with this new latest index
+    old_edges = [(val, latest_index) for val in S]
+
+    # calculate sum of these edges
+    indices = [int(x*10000+y) for (x,y) in old_edges]
+
+    #TODO: need to find another way - line below takes ages
+    #A_flat = A.todense().flatten().reshape((100000000, 1))
+
+    # sum adjacency matrix over given indices of edges that are no longer in w(S, V\S)
+    #sum_val = np.sum(A_flat[indices])
+
+    # dont forget to multiply by 2 due to symmetry of edges
+    #return sum_val*2
+    return 1
+
+def phi_function(S, A, S_vol, Conj_vol, nominator):
+    # no need to compute volume every time, only needs to add d_u for newly added vertex
+    latest_index = S[-1]
+    increment  = A[latest_index].sum()
+    S_vol += increment
+    
+    # conjugate volume needs to be decreased by increment that was added to S_vol
+    Conj_vol -= increment
+
+    # choose minimum between the volumes
+    denominator = min(S_vol, Conj_vol)
+
+    # compute w(S, conj(S) )
+    nominator += increment
+    old_weights_sum = sum_old_weights(S, A, latest_index)
+    nominator -= old_weights_sum
+
+    return nominator/denominator, nominator
+
+def find_sparse_cut(f2, A):
+    # volume of the whole graph 
+    f2, V_inds = sort_eigenvector(f2)
+    t = 0
+    
+    S_vol = 0
+    Conj_vol = A.sum()
+    S_nom = 0
+    S_star_nom = 0
+    S_star = np.array([ V_inds[0] ])
+    S      = np.array([])
+    
+    # iterate through whole graph
+    while t < 10000:
+        print(t)
+        t += 1
+        S = np.append(S, V_inds[t])
+
+        S_phi, S_nom = phi_function(S, A, S_vol, Conj_vol, S_nom)
+        S_star_phi, S_star_nom = phi_function(S_star, A, S_vol, Conj_vol, S_star_nom)
+        
+        if S_phi < S_star_phi:
+            S_star = S
+
+    return S_star
 
 def main():
     start = time.time()
+    
+    # Question 1
     #resize_and_blur_image(file_name)
+    
+    # Question 2
     A = construct_adjacency_matrix("test_blur_2.jpg")
+    D = A.sum(axis=1)
+
+    # Question 3
     D = compute_D(A)
+    v1 = np.asarray(np.sqrt(D))
+
+    des_matr = desired_matrix(A, D)
     
-    print(type(D))
-    print(D.shape)
+    f2, snd_arg = power_method_2nd_eigenvalue(des_matr, v1)
     
-    #D_sq_rt = np.sqrt(np.reciprocal(D))
-    #des_matr = desired_matrix(A, D)
-    #power_method_2nd_eigenvalue(des_matr, D_sq_rt)
-    
-    #L = compute_normalised_laplacian(A)
-    
+    #img_repr = f2.copy().reshape((100, 100))
+    #sns.heatmap(img_repr)
+    #plt.show()
+
+    S_star = find_sparse_cut(f2, A)
 
     end = time.time()
     print(end - start)
@@ -275,12 +361,26 @@ def main():
 main()
 
 
-#print( np.take(arr, [range(i-2,i+3), range(-2,3)], mode='wrap') )
+""" A = np.arange(100).reshape((10,10))
+D = A.sum(axis=1)
+indices = [2, 5]
+S_vol = 0
+for i in range(5):
+    S_vol += A[i].sum()
+#print( D.take(indices).sum() )
+#print( min(5, 6) )
 
-# works for small indices
-#print( np.take(arr, range(i-2,i+3), axis=0).take(range(j-2,j+3), axis=1)  )
+vals = [2, 4, 1, 5]
+latest_index = vals[-1]
 
-#print( arr[i-2:i+3, j-2:j+3] )
+old_edges = [(val, latest_index) for val in vals]
+indices = [x*10+y for (x,y) in old_edges]
+print(old_edges)
+print(type(old_edges))
+print(indices)
+print(A)
+sum_val = np.sum(A.flatten()[indices])
+print(sum_val) """
 
 """ start = time.time()
 naive_construct_adjacency_matrix("test_blur_2.jpg")
