@@ -49,3 +49,31 @@ eucl_dist = get_sq_euclidean_dist(spatial_distances, rgb_distances)
 # calculate_weights
 weights = calculate_weights(eucl_dist)
 """
+
+# create edges from all vertices in S with this new latest index
+#old_edges = [(val, latest_index) for val in S]
+
+# calculate sum of these edges
+#indices = [int(x*10000+y) for (x,y) in old_edges]
+
+#TODO: need to find another way - line below takes ages
+#A_flat = A.todense().flatten().reshape((100000000, 1))
+
+"""
+if (x > 3 and x < 97 and y > 3 and y < 97) or (x < 3 and y > 3 and y < 97) or (x > 97 and y > 3 and y < 97):
+    x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
+    y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
+    col_ind = np.add(x_ind, y_ind).reshape((7,7))
+elif (x > 3 and x < 97 and y < 3) or (x < 3 and y < 3) or (x > 97 and y < 3):
+    x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
+    y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
+    col_ind = np.add(x_ind, y_ind).reshape((7,7))
+    col_ind[:,:3] += 100
+    col_ind = col_ind.flatten()
+elif (x > 3 and x < 97 and y > 97) or (x > 97 and y > 97) or(x < 3 and y > 97):
+    x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
+    y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
+    col_ind = np.add(x_ind, y_ind).reshape((7,7))
+    col_ind[:,4:] -= 100
+    col_ind = col_ind.flatten()
+"""

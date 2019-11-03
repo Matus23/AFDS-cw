@@ -111,7 +111,6 @@ def get_sq_spatial_dist():
 
 def get_sq_rgb_dist(neighbours, pixel):
     rgb_dist = np.subtract( neighbours, pixel )
-    #rgb_dist = np.square(rgb_dist)
     rgb_dist = rgb_dist**2
 
     return np.sum(rgb_dist, axis=2)
@@ -131,17 +130,37 @@ def construct_adjacency_matrix(file_name, threshold=0.9, h_size=100, v_size=100)
     yy = []
     data = []
     spatial_distances = get_sq_spatial_dist()
-    
+    row_neigh = 5
+    col_neigh = 5
+
     # normalize data
     img = img/255
 
     # go through each pixel of image one by one
     for x in range(len(img)):
         for y in range(len(img)):
+            if (x > 3 and x < 97 and y > 3 and y < 97) or (x < 3 and y > 3 and y < 97) or (x > 97 and y > 3 and y < 97):
+                x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
+                y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
+                col_ind = np.add(x_ind, y_ind).reshape((7,7))
+            elif (x > 3 and x < 97 and y < 3) or (x < 3 and y < 3) or (x > 97 and y < 3):
+                x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
+                y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
+                col_ind = np.add(x_ind, y_ind).reshape((7,7))
+                col_ind[:,:3] += 100
+                col_ind = col_ind.flatten()
+            elif (x > 3 and x < 97 and y > 97) or (x > 97 and y > 97) or(x < 3 and y > 97):
+                x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
+                y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
+                col_ind = np.add(x_ind, y_ind).reshape((7,7))
+                col_ind[:,4:] -= 100
+                col_ind = col_ind.flatten()
+            
             neighbours = np.take(img, range(x-5,x+6), axis=0, mode='wrap').take(range(y-5,y+6), axis=1, mode='wrap')
     
             # calculate sq rgb distances between neighbours and central point
             rgb_distances = get_sq_rgb_dist(neighbours, img[x,y])
+
             #calculate squared euclidean distance between central point and its neighbours
             eucl_dist = get_sq_euclidean_dist(spatial_distances, rgb_distances)
             # calculate_weights
@@ -153,13 +172,18 @@ def construct_adjacency_matrix(file_name, threshold=0.9, h_size=100, v_size=100)
             # row_ind is the same as inserting edges from (x,y) vertex
             row_ind = np.array([100*x + y]*121)
 
+            # col_ind needs to cover (x,y) coordinates of the whole neighbourhood
             x_ind = np.repeat( 100*np.array(range(x-5, x+6)) , 11)
             y_ind = np.tile( np.array(range(y-5, y+6)) , (11) )
             col_ind = np.add(x_ind, y_ind)
+            print(col_ind.reshape((11,11)))
             
             # TODO: check these methods
             col_ind[col_ind>=10000] -= 10000
             col_ind[col_ind<0]      += 10000
+            print(col_ind.reshape((11,11)))
+
+            return
 
             # get indices
             xx.extend(row_ind)
@@ -269,41 +293,38 @@ def volume(S, A):
     
     return D.take(S).sum()
 
-def sum_old_weights(S, A, latest_index):
+def sum_old_weights(S, A_dense):
+    latest_index = S[-1]
+    
     # create edges from all vertices in S with this new latest index
-    old_edges = [(val, latest_index) for val in S]
-
-    # calculate sum of these edges
-    indices = [int(x*10000+y) for (x,y) in old_edges]
-
-    #TODO: need to find another way - line below takes ages
-    #A_flat = A.todense().flatten().reshape((100000000, 1))
-
+    indices = tuple([S, [latest_index]*len(S)])
+    
     # sum adjacency matrix over given indices of edges that are no longer in w(S, V\S)
-    #sum_val = np.sum(A_flat[indices])
+    sum_val = np.sum(A_dense[indices])
 
     # dont forget to multiply by 2 due to symmetry of edges
-    #return sum_val*2
-    return 1
+    return sum_val*2
 
-def phi_function(S, A, S_vol, Conj_vol, nominator):
+
+def phi_function(S, A_dense, S_vol, Conj_vol, nominator):
     # no need to compute volume every time, only needs to add d_u for newly added vertex
     latest_index = S[-1]
-    increment  = A[latest_index].sum()
+    increment  = A_dense[latest_index].sum()
     S_vol += increment
-    
+
     # conjugate volume needs to be decreased by increment that was added to S_vol
     Conj_vol -= increment
 
     # choose minimum between the volumes
     denominator = min(S_vol, Conj_vol)
 
-    # compute w(S, conj(S) )
+    # compute w(S, conj(S))
     nominator += increment
-    old_weights_sum = sum_old_weights(S, A, latest_index)
+    old_weights_sum = sum_old_weights(S, A_dense)
     nominator -= old_weights_sum
 
-    return nominator/denominator, nominator
+    return nominator/denominator, nominator, denominator
+
 
 def find_sparse_cut(f2, A):
     # volume of the whole graph 
@@ -313,23 +334,29 @@ def find_sparse_cut(f2, A):
     S_vol = 0
     Conj_vol = A.sum()
     S_nom = 0
+    S_denom = 0
     S_star_nom = 0
-    S_star = np.array([ V_inds[0] ])
-    S      = np.array([])
-    
+    S_star_denom = 0
+    S_star = [ V_inds[0] ]
+    S      = []
+    A_dense = A.todense()
+
     # iterate through whole graph
     while t < 10000:
-        print(t)
-        t += 1
-        S = np.append(S, V_inds[t])
+        S.append(V_inds[t])
 
-        S_phi, S_nom = phi_function(S, A, S_vol, Conj_vol, S_nom)
-        S_star_phi, S_star_nom = phi_function(S_star, A, S_vol, Conj_vol, S_star_nom)
-        
+        S_phi, S_nom, S_denom = phi_function(S, A_dense, S_vol, Conj_vol, S_nom)
+        S_star_phi, S_star_nom, S_star_denom = phi_function(S_star, A_dense, S_vol, Conj_vol, S_star_nom)
+
         if S_phi < S_star_phi:
+            trues.append(t)
             S_star = S
+        else:
+            falses.append(t)
 
-    return S_star
+        t += 1
+        
+    return S_star, V_inds
 
 def main():
     start = time.time()
@@ -339,29 +366,75 @@ def main():
     
     # Question 2
     A = construct_adjacency_matrix("test_blur_2.jpg")
-    D = A.sum(axis=1)
 
     # Question 3
-    D = compute_D(A)
+    """ D = compute_D(A)
     v1 = np.asarray(np.sqrt(D))
 
     des_matr = desired_matrix(A, D)
     
     f2, snd_arg = power_method_2nd_eigenvalue(des_matr, v1)
     
-    #img_repr = f2.copy().reshape((100, 100))
+    img_repr = f2.copy().reshape((100, 100))
+    sns.heatmap(img_repr)
+    plt.show() """
+
+    # Question 4
+    #S_star, V_inds = find_sparse_cut(f2, A) 
+    #S_sort = [x for _, x in sorted(zip(V_inds, S_star))]
+    #img_repr = np.asarray(S_star).reshape((100,100))
     #sns.heatmap(img_repr)
     #plt.show()
+    
+    #V_inds = f2.argsort()
+    #f2.sort()
 
-    S_star = find_sparse_cut(f2, A)
+    #print(S_star)
+    #print(V_inds)
+    #print(V_inds_inds)
+
 
     end = time.time()
     print(end - start)
 
-main()
+#main()
+
+x, y = 0, 2
+A = np.arange(100).reshape((10,10))
+# row_ind is the same as inserting edges from (x,y) vertex
+row_ind = np.array([100*x + y]*49)
+# col_ind needs to cover (x,y) coordinates of the whole neighbourhood
+if (y < 3):
+    x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
+    y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
+    col_ind = np.add(x_ind, y_ind).reshape((7,7))
+    col_ind[:,:y] += 100
+    col_ind = col_ind.flatten()
+elif (y > 3 and y < 97):
+    x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
+    y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
+    col_ind = np.add(x_ind, y_ind).reshape((7,7))
+elif (y >= 97):
+    x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
+    y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
+    col_ind = np.add(x_ind, y_ind).reshape((7,7))
+    col_ind[:,4:] -= 100
+    col_ind = col_ind.flatten()
+
+#if x < 3 and y > 3 and y < 97:
+
+#print(x_ind.reshape((7,7)))
+#print(y_ind.reshape((7,7)))
 
 
-""" A = np.arange(100).reshape((10,10))
+# TODO: check these methods
+col_ind[col_ind>=10000] -= 10000
+col_ind[col_ind<0]      += 10000
+print(col_ind.reshape((7,7)))
+
+
+""" 
+A = np.arange(100).reshape((10,10))
 D = A.sum(axis=1)
 indices = [2, 5]
 S_vol = 0
@@ -370,17 +443,20 @@ for i in range(5):
 #print( D.take(indices).sum() )
 #print( min(5, 6) )
 
+# vals === S
 vals = [2, 4, 1, 5]
 latest_index = vals[-1]
 
 old_edges = [(val, latest_index) for val in vals]
-indices = [x*10+y for (x,y) in old_edges]
 print(old_edges)
-print(type(old_edges))
-print(indices)
-print(A)
+indices = [x*10+y for (x,y) in old_edges]
 sum_val = np.sum(A.flatten()[indices])
-print(sum_val) """
+
+indices = tuple([[1, 2], [4,2]])
+indices = tuple([vals, [latest_index]*len(vals)])
+print(A[indices])
+print(A)
+"""
 
 """ start = time.time()
 naive_construct_adjacency_matrix("test_blur_2.jpg")
