@@ -199,29 +199,32 @@ def get_sqroot_inv(D):
 Computes inverse squared root of matrix D given an adjacency matrix A
 Returns only the diagonal values 
 """
-def compute_sqrt_inv_D(D):
-    row_sums = np.sqrt(row_sums)        # take square root
-    row_sums = np.reciprocal(row_sums)  # take inverse
+def compute_sqrt_inv_D(D_full):
+    D_inv = np.linalg.inv(D_full)
+    D_sqrt = np.sqrt(D_inv)
+    
+    print(D_sqrt.shape)
 
-    return np.diag(row_sums.reshape((len(row_sums),)))
+    return D_sqrt
 
 
 def compute_D(A):
     return A.sum(axis=1)
+    
+
+def compute_D_matr(A):
+    return np.diag(np.asarray(A.sum(axis=1)).reshape((A.shape[0],)))
 
 
 def normalised_laplacian(A):
     # L = I - inv(sqrt(D)) A inv(sqrt(D))
-    sqrt_inv_D = compute_sqrt_inv_D(A)
-    
-    # inv(sqrt(D)) A
-    DA = A.dot(sqrt_inv_D)
-    # inv(sqrt(D)) A inv(sqrt(D))
-    ADA = DA.dot(sqrt_inv_D)
-   
+    D = compute_D(A)
+    #D_inv = np.reciprocal(D)
+    D_inv = np.reciprocal(D.astype(float))
+
     I = identity(A.shape[0])
 
-    L = np.subtract(I.toarray(), ADA)
+    L = np.subtract(I, D_inv*A)
     
     return L
 
@@ -230,15 +233,16 @@ def normalised_laplacian(A):
 Input: Adjacency matrix (A) and D in the form of vector
 Returns: the desired matrix (I + inv(D)*A ) which holds as D is a diagonal matrix
 """
-def desired_matrix(A, D):
-    print("before: ", D)
-    D_inv = np.reciprocal(D)
-    print("after: ", D_inv)
+def desired_matrix_fast(A, D):
+    D_inv = np.reciprocal(D.astype(float))
+    
+    return  identity(A.shape[0]) + (A.transpose() * D_inv).transpose()
 
-    res =  identity(A.shape[0]) + A * D_inv
-    print(res.shape)
+def desired_matrix_slow(A, D):
+    D_sqrt_inv = compute_sqrt_inv_D(D)
+    
+    return  identity(A.shape[0]) + D_sqrt_inv * A * D_sqrt_inv
 
-    return res
 
 def power_method(B):
     B = B.todense()
@@ -260,12 +264,15 @@ computes using power method the 2nd largest eigenvalue of B
 """
 def power_method_2nd_eigenvalue(B, v1, k=50):
     x0 = np.random.normal(0, 1, B.shape[0])
+    x0 = x0/np.linalg.norm(x0)
 
     # reshape v1 to shape (n,) from (n,1)
     v1 = v1.reshape( (v1.shape[0],) )
+    v1 = v1/np.linalg.norm(v1)
 
     dot_product = np.dot(v1, x0)
     x = x0 - dot_product * v1
+    x = x/np.linalg.norm(x)
 
     for i in range(k):
         x = np.asarray(B.dot(x))
@@ -346,10 +353,7 @@ def find_sparse_cut(f2, A):
         S_star_phi, S_star_nom, S_star_denom = phi_function(S_star, A_dense, S_vol, Conj_vol, S_star_nom)
 
         if S_phi < S_star_phi:
-            trues.append(t)
             S_star = S
-        else:
-            falses.append(t)
 
         t += 1
         
@@ -366,11 +370,17 @@ def main():
     print("Number of nonzero entries: ", A.count_nonzero())
 
     # Question 3
-    D = compute_D(A)
-    v1 = np.asarray(np.sqrt(D))
-
-    des_matr = desired_matrix(A, D)
+    #D = compute_D_matr(A)
+    D = np.asarray(compute_D(A)).reshape((10000,))
     
+    # compute the desired matrix (I - sqrt(inv(D))*A*sqrt(inv(D)) )
+    #des_matr = desired_matrix_slow(A, D)
+    des_matr = desired_matrix_fast(A, D)
+    
+    # get the 1st eigenvector
+    #v1 = np.sqrt(np.diag(D))
+    v1 = np.sqrt(D)  #---> when D represented as a vector
+
     f2, snd_arg = power_method_2nd_eigenvalue(des_matr, v1)
     
     img_repr = f2.copy().reshape((100, 100))
@@ -378,7 +388,9 @@ def main():
     plt.show()
 
     # Question 4
-    #S_star, V_inds = find_sparse_cut(f2, A) 
+    S_star, V_inds = find_sparse_cut(f2, A) 
+    print(len(S_star))
+    print(type(S_star))
     #S_sort = [x for _, x in sorted(zip(V_inds, S_star))]
     #img_repr = np.asarray(S_star).reshape((100,100))
     #sns.heatmap(img_repr)
@@ -395,8 +407,50 @@ def main():
     end = time.time()
     print(end - start)
 
-main()
+#main()
 
+A = csr_matrix(np.arange(100).reshape((10,10)))
+D = np.asarray(compute_D(A)).reshape((10,))
+print(D)
+#des_matr = desired_matrix_fast(A, D)
+#print(des_matr)
+print(A.todense())
+print( identity(A.shape[0]) )
+
+D_inv = np.reciprocal(D.astype(float))
+D2 = compute_D_matr(A)   
+ 
+#des_matr = identity(A.shape[0]) + (A.transpose() * D_inv).transpose()
+print( (A.transpose()*D_inv).transpose() )
+
+
+#D_inv = np.reciprocal(D.astype(float))
+#print(D_inv)
+#v1 = np.sqrt(D_inv)
+#print(v1)
+
+#identity(A.shape[0]) + (A.transpose() * D_inv).transpose()
+
+
+""" 
+row = np.array([0, 0, 1, 2, 2, 2])
+col = np.array([0, 2, 2, 0, 1, 2])
+data = np.array([1, 2, 3, 4, 5, 6])
+A =  csr_matrix(np.arange(100).reshape((10,10))) 
+vec = np.arange(10)
+print( A * vec )
+print(A.todense())
+print(vec)
+print( (A.transpose() * vec).transpose() )
+
+D = np.asarray(A.sum(axis=1)).reshape((10,))
+print(D)
+print(D.shape)
+print(type(D))
+print( np.diag(D) )
+#print( D * A )
+# TODO: wrong computation of "desired_matrix" and of matrix D
+ """
 """ 
 x, y = 0, 97
 A = np.arange(100).reshape((10,10))
@@ -422,50 +476,4 @@ col_ind = col_ind.flatten()
 col_ind[col_ind>=10000] -= 10000
 col_ind[col_ind<0]      += 10000
 print(col_ind.reshape((square_dim, square_dim))) 
-"""
-""" 
-A = np.arange(100).reshape((10,10))
-D = A.sum(axis=1)
-indices = [2, 5]
-S_vol = 0
-for i in range(5):
-    S_vol += A[i].sum()
-#print( D.take(indices).sum() )
-#print( min(5, 6) )
-
-# vals === S
-vals = [2, 4, 1, 5]
-latest_index = vals[-1]
-
-old_edges = [(val, latest_index) for val in vals]
-print(old_edges)
-indices = [x*10+y for (x,y) in old_edges]
-sum_val = np.sum(A.flatten()[indices])
-
-indices = tuple([[1, 2], [4,2]])
-indices = tuple([vals, [latest_index]*len(vals)])
-print(A[indices])
-print(A)
-"""
-
-""" start = time.time()
-naive_construct_adjacency_matrix("test_blur_2.jpg")
-    
-end = time.time()
-print(end - start) """
-
-
-""" matrix = np.zeros((2, 2))
-val = 0
-for i in range(2):
-    for j in range(2):
-        matrix[i][j] = val
-        val+=1
-"""
-""" row = np.array([0,2,2,0,1,2])
-col = np.array([0,0,1,2,2,2])
-data = np.array([1,2,3,4,5,6])
-print( csr_matrix( (data,(row,col)), shape=(3,3) ).todense() ) 
-A = csr_matrix( (data,(row,col)), shape=(3,3) )
-compute_matrix_D(A)
 """
