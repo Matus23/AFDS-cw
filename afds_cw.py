@@ -1,4 +1,3 @@
-import cv2
 from PIL import Image
 import os, sys
 import numpy as np
@@ -11,6 +10,7 @@ from scipy.spatial import distance
 import seaborn as sns 
 import matplotlib.pyplot as plt
 from itertools import combinations
+import cv2
 
 file_name = "images/bear.png"
 threshold = 0.9
@@ -130,8 +130,8 @@ def construct_adjacency_matrix(file_name, threshold=0.9, h_size=100, v_size=100)
     yy = []
     data = []
     spatial_distances = get_sq_spatial_dist()
-    row_neigh = 5
-    col_neigh = 5
+    neigh_size = 5
+    square_dim = 2 * neigh_size + 1
 
     # normalize data
     img = img/255
@@ -139,30 +139,14 @@ def construct_adjacency_matrix(file_name, threshold=0.9, h_size=100, v_size=100)
     # go through each pixel of image one by one
     for x in range(len(img)):
         for y in range(len(img)):
-            if (x > 3 and x < 97 and y > 3 and y < 97) or (x < 3 and y > 3 and y < 97) or (x > 97 and y > 3 and y < 97):
-                x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
-                y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
-                col_ind = np.add(x_ind, y_ind).reshape((7,7))
-            elif (x > 3 and x < 97 and y < 3) or (x < 3 and y < 3) or (x > 97 and y < 3):
-                x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
-                y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
-                col_ind = np.add(x_ind, y_ind).reshape((7,7))
-                col_ind[:,:3] += 100
-                col_ind = col_ind.flatten()
-            elif (x > 3 and x < 97 and y > 97) or (x > 97 and y > 97) or(x < 3 and y > 97):
-                x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
-                y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
-                col_ind = np.add(x_ind, y_ind).reshape((7,7))
-                col_ind[:,4:] -= 100
-                col_ind = col_ind.flatten()
-            
             neighbours = np.take(img, range(x-5,x+6), axis=0, mode='wrap').take(range(y-5,y+6), axis=1, mode='wrap')
-    
+            
             # calculate sq rgb distances between neighbours and central point
             rgb_distances = get_sq_rgb_dist(neighbours, img[x,y])
-
+            
             #calculate squared euclidean distance between central point and its neighbours
             eucl_dist = get_sq_euclidean_dist(spatial_distances, rgb_distances)
+            
             # calculate_weights
             weights = calculate_weights(eucl_dist)
 
@@ -172,23 +156,31 @@ def construct_adjacency_matrix(file_name, threshold=0.9, h_size=100, v_size=100)
             # row_ind is the same as inserting edges from (x,y) vertex
             row_ind = np.array([100*x + y]*121)
 
-            # col_ind needs to cover (x,y) coordinates of the whole neighbourhood
-            x_ind = np.repeat( 100*np.array(range(x-5, x+6)) , 11)
-            y_ind = np.tile( np.array(range(y-5, y+6)) , (11) )
-            col_ind = np.add(x_ind, y_ind)
-            print(col_ind.reshape((11,11)))
+            if (y < neigh_size):
+                x_ind = np.repeat( 100*np.array(range(x-neigh_size, x+neigh_size+1)) , square_dim)
+                y_ind = np.tile( np.array(range(y-neigh_size, y+neigh_size+1)) , (square_dim) )
+                col_ind = np.add(x_ind, y_ind).reshape((square_dim,square_dim))
+                col_ind[:,:neigh_size-y] += 100
+            elif (y >= neigh_size and y < 100-neigh_size):
+                x_ind = np.repeat( 100*np.array(range(x-neigh_size, x+neigh_size+1)) , square_dim)
+                y_ind = np.tile( np.array(range(y-neigh_size, y+neigh_size+1)) , (square_dim) )
+                col_ind = np.add(x_ind, y_ind).reshape((square_dim,square_dim))
+            elif (y >= 100-neigh_size):
+                x_ind = np.repeat( 100*np.array(range(x-neigh_size, x+neigh_size+1)) , square_dim)
+                y_ind = np.tile( np.array(range(y-neigh_size, y+neigh_size+1)) , (square_dim) )
+                col_ind = np.add(x_ind, y_ind).reshape((square_dim,square_dim))
+                col_ind[:,100+neigh_size-y:] -= 100
             
-            # TODO: check these methods
+            col_ind = col_ind.flatten()
             col_ind[col_ind>=10000] -= 10000
             col_ind[col_ind<0]      += 10000
-            print(col_ind.reshape((11,11)))
-
-            return
 
             # get indices
             xx.extend(row_ind)
             yy.extend(col_ind)
-             
+            #print(row_ind)
+            #print(col_ind.reshape((11,11)))
+
     return csr_matrix( (data, (xx, yy)), shape=(10000, 10000) )
 
 
@@ -239,9 +231,14 @@ Input: Adjacency matrix (A) and D in the form of vector
 Returns: the desired matrix (I + inv(D)*A ) which holds as D is a diagonal matrix
 """
 def desired_matrix(A, D):
+    print("before: ", D)
     D_inv = np.reciprocal(D)
+    print("after: ", D_inv)
 
-    return identity(A.shape[0]) + A * D_inv
+    res =  identity(A.shape[0]) + A * D_inv
+    print(res.shape)
+
+    return res
 
 def power_method(B):
     B = B.todense()
@@ -261,7 +258,7 @@ def power_method(B):
 Given a square root of matrix D and a matrix B,
 computes using power method the 2nd largest eigenvalue of B
 """
-def power_method_2nd_eigenvalue(B, v1, k=20):
+def power_method_2nd_eigenvalue(B, v1, k=50):
     x0 = np.random.normal(0, 1, B.shape[0])
 
     # reshape v1 to shape (n,) from (n,1)
@@ -366,9 +363,10 @@ def main():
     
     # Question 2
     A = construct_adjacency_matrix("test_blur_2.jpg")
+    print("Number of nonzero entries: ", A.count_nonzero())
 
     # Question 3
-    """ D = compute_D(A)
+    D = compute_D(A)
     v1 = np.asarray(np.sqrt(D))
 
     des_matr = desired_matrix(A, D)
@@ -377,7 +375,7 @@ def main():
     
     img_repr = f2.copy().reshape((100, 100))
     sns.heatmap(img_repr)
-    plt.show() """
+    plt.show()
 
     # Question 4
     #S_star, V_inds = find_sparse_cut(f2, A) 
@@ -397,42 +395,34 @@ def main():
     end = time.time()
     print(end - start)
 
-#main()
+main()
 
-x, y = 0, 2
+""" 
+x, y = 0, 97
 A = np.arange(100).reshape((10,10))
-# row_ind is the same as inserting edges from (x,y) vertex
-row_ind = np.array([100*x + y]*49)
 # col_ind needs to cover (x,y) coordinates of the whole neighbourhood
-if (y < 3):
-    x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
-    y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
-    col_ind = np.add(x_ind, y_ind).reshape((7,7))
-    col_ind[:,:y] += 100
-    col_ind = col_ind.flatten()
-elif (y > 3 and y < 97):
-    x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
-    y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
-    col_ind = np.add(x_ind, y_ind).reshape((7,7))
-elif (y >= 97):
-    x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
-    y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
-    col_ind = np.add(x_ind, y_ind).reshape((7,7))
-    col_ind[:,4:] -= 100
-    col_ind = col_ind.flatten()
+neigh_size = 5
+square_dim = 2*neigh_size + 1
+if (y < neigh_size):
+    x_ind = np.repeat( 100*np.array(range(x-neigh_size, x+neigh_size+1)) , square_dim)
+    y_ind = np.tile( np.array(range(y-neigh_size, y+neigh_size+1)) , (square_dim) )
+    col_ind = np.add(x_ind, y_ind).reshape((square_dim,square_dim))
+    col_ind[:,:neigh_size-y] += 100
+elif (y >= neigh_size and y < 100-neigh_size):
+    x_ind = np.repeat( 100*np.array(range(x-neigh_size, x+neigh_size+1)) , square_dim)
+    y_ind = np.tile( np.array(range(y-neigh_size, y+neigh_size+1)) , (square_dim) )
+    col_ind = np.add(x_ind, y_ind).reshape((square_dim,square_dim))
+elif (y >= 100-neigh_size):
+    x_ind = np.repeat( 100*np.array(range(x-neigh_size, x+neigh_size+1)) , square_dim)
+    y_ind = np.tile( np.array(range(y-neigh_size, y+neigh_size+1)) , (square_dim) )
+    col_ind = np.add(x_ind, y_ind).reshape((square_dim,square_dim))
+    col_ind[:,100+neigh_size-y:] -= 100
 
-#if x < 3 and y > 3 and y < 97:
-
-#print(x_ind.reshape((7,7)))
-#print(y_ind.reshape((7,7)))
-
-
-# TODO: check these methods
+col_ind = col_ind.flatten()
 col_ind[col_ind>=10000] -= 10000
 col_ind[col_ind<0]      += 10000
-print(col_ind.reshape((7,7)))
-
-
+print(col_ind.reshape((square_dim, square_dim))) 
+"""
 """ 
 A = np.arange(100).reshape((10,10))
 D = A.sum(axis=1)

@@ -60,20 +60,22 @@ weights = calculate_weights(eucl_dist)
 #A_flat = A.todense().flatten().reshape((100000000, 1))
 
 """
-if (x > 3 and x < 97 and y > 3 and y < 97) or (x < 3 and y > 3 and y < 97) or (x > 97 and y > 3 and y < 97):
-    x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
-    y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
-    col_ind = np.add(x_ind, y_ind).reshape((7,7))
-elif (x > 3 and x < 97 and y < 3) or (x < 3 and y < 3) or (x > 97 and y < 3):
-    x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
-    y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
-    col_ind = np.add(x_ind, y_ind).reshape((7,7))
-    col_ind[:,:3] += 100
-    col_ind = col_ind.flatten()
-elif (x > 3 and x < 97 and y > 97) or (x > 97 and y > 97) or(x < 3 and y > 97):
-    x_ind = np.repeat( 100*np.array(range(x-3, x+4)) , 7)
-    y_ind = np.tile( np.array(range(y-3, y+4)) , (7) )
-    col_ind = np.add(x_ind, y_ind).reshape((7,7))
-    col_ind[:,4:] -= 100
-    col_ind = col_ind.flatten()
+if (y < neigh_size):
+    x_ind = np.repeat( 100*np.array(range(x-neigh_size, x+neigh_size+1)) , square_dim)
+    y_ind = np.tile( np.array(range(y-neigh_size, y+neigh_size+1)) , (square_dim) )
+    col_ind = np.add(x_ind, y_ind).reshape((square_dim,square_dim))
+    col_ind[:,:neigh_size-y] += 100
+elif (y >= neigh_size and y < 100-neigh_size):
+    x_ind = np.repeat( 100*np.array(range(x-neigh_size, x+neigh_size+1)) , square_dim)
+    y_ind = np.tile( np.array(range(y-neigh_size, y+neigh_size+1)) , (square_dim) )
+    col_ind = np.add(x_ind, y_ind).reshape((square_dim,square_dim))
+elif (y >= 100-neigh_size):
+    x_ind = np.repeat( 100*np.array(range(x-neigh_size, x+neigh_size+1)) , square_dim)
+    y_ind = np.tile( np.array(range(y-neigh_size, y+neigh_size+1)) , (square_dim) )
+    col_ind = np.add(x_ind, y_ind).reshape((square_dim,square_dim))
+    col_ind[:,100+neigh_size-y:] -= 100
+
+col_ind = col_ind.flatten()
+col_ind[col_ind>=10000] -= 10000
+col_ind[col_ind<0]      += 10000
 """
